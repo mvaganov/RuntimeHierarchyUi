@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
+[Serializable]
 public class ElementState {
 	[HideInInspector]
 	public string name;
@@ -55,19 +57,17 @@ public class ElementState {
 		txt.text = _expanded ? "v" : ">";
 	}
 
-	private void UpdateLabelText() {
+	public void UpdateLabelText() {
 		if (_label == null) { return; }
 		TMP_Text text = _label.GetComponentInChildren<TMP_Text>();
 		text.text = name;
-		if (target == null) {
-			text.text = "(deleted) " + text.text;
-		}
-		Color textColor = text.color;
+		Color textColor = Color.black;//text.color;
 		if (target != null) {
 			textColor.a = target.gameObject.activeInHierarchy ? 1 : 0.5f;
-		} else {
-			textColor = Color.red;
 		}
+		//else {
+		//	textColor = Color.red;
+		//}
 		text.color = textColor;
 	}
 
@@ -106,8 +106,8 @@ public class ElementState {
 		if (depth > maxDepth) {
 			maxDepth = depth;
 		}
-		height = target != null ? 1 : 0;
-		if (children.Count == 0 || !_expanded) {
+		height = target != null || !string.IsNullOrEmpty(name) ? 1 : 0;
+		if (children == null || children.Count == 0 || !_expanded) {
 			return height;
 		}
 		int rowCursor = row + height;
@@ -116,6 +116,7 @@ public class ElementState {
 		}
 		for (int i = 0; i < children.Count; i++) {
 			children[i].row = rowCursor;
+			children[i].column = depth;
 			int elementHeight = rowCursor < maintainRowsBefore ? children[i].height :
 				children[i].CalculateHeight(depth, ref maxDepth, row);
 			height += elementHeight;

@@ -42,7 +42,7 @@ public class HierarchyUi : MonoBehaviour {
 	/// <summary>
 	/// element state tree
 	/// </summary>
-	private ElementState _root;
+	public ElementState _root;
 	/// <summary>
 	/// calculated area where hierarchy elements and expand/collapse UI should be generated
 	/// </summary>
@@ -125,9 +125,10 @@ public class HierarchyUi : MonoBehaviour {
 			}
 			ElementState sceneStateNode = new ElementState(_root, null, 0, 0, expanded);
 			sceneStateNode.name = sceneNames[sceneIndex];
+			_root.children.Add(sceneStateNode);
 			for (int i = 0; i < list.Count; ++i) {
 				ElementState es = GetElementStateEntry(sceneStateNode, list[i], 0, i, expanded);
-				_root.children.Add(es);
+				sceneStateNode.children.Add(es);
 				AddChildrenStates(es, expanded);
 			}
 		}
@@ -156,6 +157,8 @@ public class HierarchyUi : MonoBehaviour {
 			elementStates[target] = value;
 		} else {
 			value.parent = parent;
+			value.column = column;
+			value.row = row;
 			value.children.Clear();
 			value.RefreshName();
 			value._expectedTargetChildren = (target != null) ? target.childCount : 0;
@@ -246,7 +249,7 @@ public class HierarchyUi : MonoBehaviour {
 	}
 
 	private bool IsSceneCountChanged() {
-		if (SceneManager.sceneCount > expectedElementsAtSceneRoot.Length) {
+		if (expectedElementsAtSceneRoot == null || SceneManager.sceneCount > expectedElementsAtSceneRoot.Length) {
 			//Debug.Log($"scene count changed! Expected {expectedElementsAtSceneRoot.Length}, have {SceneManager.sceneCount}");
 			return true;
 		}
@@ -317,35 +320,49 @@ public class HierarchyUi : MonoBehaviour {
 		Vector2 cursor = new Vector2(indentWidth * es.column, _elementHeight * es.row);
 		Vector2 anchoredPosition = new Vector2(cursor.x, -cursor.y);
 		Vector2 elementPosition = anchoredPosition + Vector2.right * indentWidth;
-		RectTransform rt;
 		Rect expandRect = new Rect(cursor, new Vector2(indentWidth, _elementHeight));
 		Rect elementRect = new Rect(cursor + Vector2.right * indentWidth, new Vector2(elementWidth, _elementHeight));
+		bool createdExpandButton = false;
 		if (!cullOffScreen || _cullBox.Overlaps(expandRect)) {
-			if (es.children.Count > 0) {
-				Button expand = expandPool.GetFreeFromPools(prefabExpand, es.Expand);
-				rt = expand.GetComponent<RectTransform>();
-				rt.SetParent(_contentPanelTransform, false);
-				rt.anchoredPosition = anchoredPosition;
-				rt.name = $"> {es.name}";
-				expand.onClick.RemoveAllListeners();
-				expand.onClick.AddListener(() => ToggleExpand(es));
-				es.Expand = expand;
-			} else {
-				es.Expand = null;
-			}
+			createdExpandButton = CreateExpandButton(es, anchoredPosition);
+		}
+		if (!createdExpandButton) {
+			es.Expand = null;
 		}
 		if (!cullOffScreen || _cullBox.Overlaps(elementRect)) {
-			Button element = elementPool.GetFreeFromPools(prefabElement, es.Label);
-			rt = element.GetComponent<RectTransform>();
-			rt.SetParent(_contentPanelTransform, false);
-			rt.anchoredPosition = elementPosition;
-			rt.name = $"({es.name})";
-			element.onClick.RemoveAllListeners();
-			element.onClick.AddListener(() => SelectElement(es));
-			es.Label = element;
+			CreateElementButton(es, elementPosition);
 		} else {
 			es.Label = null;
 		}
+	}
+
+	private bool CreateExpandButton(ElementState es, Vector2 anchoredPosition) {
+		if (es.children.Count == 0) {
+			return false;
+		}
+		Button expand = expandPool.GetFreeFromPools(prefabExpand, es.Expand);
+		RectTransform rt = expand.GetComponent<RectTransform>();
+		rt.SetParent(_contentPanelTransform, false);
+		rt.anchoredPosition = anchoredPosition;
+		rt.name = $"> {es.name}";
+		expand.onClick.RemoveAllListeners();
+		expand.onClick.AddListener(() => ToggleExpand(es));
+		es.Expand = expand;
+		return true;
+	}
+
+	private void CreateElementButton(ElementState es, Vector2 elementPosition) {
+		Button element = elementPool.GetFreeFromPools(prefabElement, es.Label);
+		RectTransform rt = element.GetComponent<RectTransform>();
+		rt.SetParent(_contentPanelTransform, false);
+		rt.anchoredPosition = elementPosition;
+		rt.name = $"({es.name})";
+		es.UpdateLabelText();
+		element.onClick.RemoveAllListeners();
+		element.onClick.AddListener(() => SelectElement(es));
+		es.Label = element;
+		Image img = element.GetComponent<Image>();
+		img.enabled = (es.target != null);
 	}
 
 	private void ToggleExpand(ElementState es) {
@@ -355,7 +372,7 @@ public class HierarchyUi : MonoBehaviour {
 	}
 
 	private void SelectElement(ElementState es) {
-		Debug.Log($"selected {es.name}");
+		Debug.Log($"selected {es.name} ({es.target})");
 		onElementSelect.Invoke(es.target);
 	}
 }
