@@ -1,5 +1,6 @@
 using UnityEngine;
 
-public class HierarchyIgnore : MonoBehaviour
-{
+namespace RuntimeHierarchy {
+	public class HierarchyIgnore : MonoBehaviour {
+	}
 }
