@@ -125,10 +125,21 @@ namespace RuntimeHierarchy {
 			while (root.parent != null) {
 				root = root.parent;
 				if (++loopguard > 100000) {
-					throw new System.Exception("max depth reached. find recursion?");
+					List<UiElementNode<TARGET>> path = new List<UiElementNode<TARGET>> ();
+					bool recursed = FindParentRecursion(this, path);
+					if (recursed) {
+						throw new System.Exception($"{name} root max depth reached, recursion at depth {path.Count}");
+					}
 				}
 			}
 			return root;
+		}
+
+		private bool FindParentRecursion(UiElementNode<TARGET> cursor, List<UiElementNode<TARGET>> path) {
+			if (path.Contains(cursor)) { return true; }
+			path.Add(cursor);
+			if (cursor.parent == null) { return false; }
+			return FindParentRecursion(cursor.parent, path);
 		}
 
 		public float CalculateDimensions(int depth, ref int maxDepth, float maintainRowsBefore,
