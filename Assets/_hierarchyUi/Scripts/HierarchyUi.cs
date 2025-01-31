@@ -1,8 +1,9 @@
-	using System.Collections.Generic;
-	using UnityEngine;
-	using UnityEngine.Events;
-	using UnityEngine.SceneManagement;
-	using UnityEngine.UI;
+using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace RuntimeHierarchy {
 	/// <summary>
@@ -52,7 +53,7 @@ namespace RuntimeHierarchy {
 		/// <summary>
 		/// element state tree
 		/// </summary>
-		private ElementState _root;
+		private TransformNode _root;
 		/// <summary>
 		/// calculated area where hierarchy elements and expand/collapse UI should be generated
 		/// </summary>
@@ -68,19 +69,23 @@ namespace RuntimeHierarchy {
 		/// <summary>
 		/// how wide each clickable hierarchy element is
 		/// </summary>
-		private float elementWidth;
+		private float _elementWidth;
 		/// <summary>
 		/// how wide each clickable expand/collapse element is (height is the same as <see cref="_elementHeight"/>
 		/// </summary>
-		private float indentWidth;
+		private float _indentWidth;
 		/// <summary>
-		/// cached <see cref="ElementState"/>s by hierarchy <see cref="Transform"/>. used to reuse allocations
+		/// cached <see cref="TransformNode"/>s by hierarchy <see cref="Transform"/>. used to reuse allocations
 		/// </summary>
-		private Dictionary<Transform, ElementState> elementStates = new Dictionary<Transform, ElementState>();
+		private Dictionary<Transform, TransformNode> elementStates = new Dictionary<Transform, TransformNode>();
 		/// <summary>
 		/// cached value of how many elements are in each scene. used to quickly determine if new objects were added/removed
 		/// </summary>
 		private int[] expectedElementsAtSceneRoot;
+
+		public float IndentWidth => _indentWidth;
+		public float ElementWidth => _elementWidth;
+		public float ElementHeight => _elementHeight;
 
 		protected void Update() {
 			if (_root == null) {
@@ -97,6 +102,26 @@ namespace RuntimeHierarchy {
 		/// </summary>
 		public void RequestRefresh() {
 			_usedCullBox = new Rect(Vector2.zero, -Vector2.one);
+		}
+
+		[ContextMenu(nameof(ClearUi))]
+		public void ClearUi() {
+			Transform uiElement = contentPanel.transform;
+			for (int i = uiElement.childCount-1; i >= 0; --i) {
+#if UNITY_EDITOR
+				if (!Application.isPlaying) {
+					DestroyImmediate(uiElement.GetChild(i).gameObject);
+				} else
+#endif
+				{
+					Destroy(uiElement.GetChild(i).gameObject);
+				}
+			}
+#if UNITY_EDITOR
+			if (!Application.isPlaying) {
+				UnityEditor.EditorUtility.SetDirty(this);
+			}
+#endif
 		}
 
 		/// <summary>
@@ -131,21 +156,21 @@ namespace RuntimeHierarchy {
 		}
 
 		private void RefreshHierarchyState(bool expanded) {
-			ElementState oldRoot = _root;
+			TransformNode oldRoot = _root;
 			List<Transform>[] objectsPerScene = GetAllRootElementsByScene(out string[] sceneNames);
 			expectedElementsAtSceneRoot = new int[objectsPerScene.Length];
-			_root = new ElementState(null, null, 0, 0, expanded);
+			_root = new TransformNode(this, null, null, 0, 0, expanded);
 			MarkCurrentElementsAsUnusedUntilTheyAreFoundByGetElementStateEntry();
 			for (int sceneIndex = 0; sceneIndex < objectsPerScene.Length; ++sceneIndex) {
 				List<Transform> list = objectsPerScene[sceneIndex];
 				if (sceneIndex < SceneManager.sceneCount) {
 					expectedElementsAtSceneRoot[sceneIndex] = SceneManager.GetSceneAt(sceneIndex).rootCount;
 				}
-				ElementState sceneStateNode = new ElementState(_root, null, 0, 0, expanded);
+				TransformNode sceneStateNode = new TransformNode(this, _root, null, 0, 0, expanded);
 				sceneStateNode.name = sceneNames[sceneIndex];
 				_root.children.Add(sceneStateNode);
 				for (int i = 0; i < list.Count; ++i) {
-					ElementState es = GetElementStateEntry(sceneStateNode, list[i], 0, i, expanded);
+					TransformNode es = GetElementStateEntry(sceneStateNode, list[i], 0, i, expanded);
 					sceneStateNode.children.Add(es);
 					AddChildrenStates(es, expanded);
 				}
@@ -169,9 +194,9 @@ namespace RuntimeHierarchy {
 			removedTransforms.ForEach(t => elementStates.Remove(t));
 		}
 
-		private ElementState GetElementStateEntry(ElementState parent, Transform target, int column, int row, bool expanded) {
-			if (!elementStates.TryGetValue(target, out ElementState value)) {
-				value = new ElementState(parent, target, column, row, expanded);
+		private TransformNode GetElementStateEntry(TransformNode parent, Transform target, float column, float row, bool expanded) {
+			if (!elementStates.TryGetValue(target, out TransformNode value)) {
+				value = new TransformNode(this, parent, target, column, row, expanded);
 				elementStates[target] = value;
 			} else {
 				value.parent = parent;
@@ -185,15 +210,15 @@ namespace RuntimeHierarchy {
 			return value;
 		}
 
-		private void AddChildrenStates(ElementState self, bool expanded) {
-			int c = self.column + 1;
-			int r = self.row + 1;
+		private void AddChildrenStates(TransformNode self, bool expanded) {
+			float c = self.column + 1;
+			float r = self.row + 1;
 			for (int i = 0; i < self.target.childCount; ++i) {
 				Transform t = self.target.GetChild(i);
 				if (t == null || t.GetComponent<HierarchyIgnore>() != null) {
 					continue;
 				}
-				ElementState es = GetElementStateEntry(self, t, c, r, expanded);
+				TransformNode es = GetElementStateEntry(self, t, c, r, expanded);
 				self.children.Add(es);
 				AddChildrenStates(es, expanded);
 			}
@@ -290,7 +315,7 @@ namespace RuntimeHierarchy {
 
 		private bool IsElementMissingOrChildElementCountChanged() {
 			foreach (var item in elementStates) {
-				ElementState es = item.Value;
+				TransformNode es = item.Value;
 				if (item.Key == null) {
 					//Debug.Log($"missing {es.name}");
 					return true;
@@ -309,12 +334,13 @@ namespace RuntimeHierarchy {
 				return;
 			}
 			_elementHeight = prefabElement.GetComponent<RectTransform>().sizeDelta.y;
-			elementWidth = prefabElement.GetComponent<RectTransform>().sizeDelta.x;
-			indentWidth = prefabExpand.GetComponent<RectTransform>().sizeDelta.x;
+			_elementWidth = prefabElement.GetComponent<RectTransform>().sizeDelta.x;
+			_indentWidth = prefabExpand.GetComponent<RectTransform>().sizeDelta.x;
 			int depth = 0;
-			_root.CalculateHeight(0, ref depth, 0);
-			_contentSize.y = _root.height * _elementHeight;
-			_contentSize.x = (depth + 1) * indentWidth + elementWidth;
+			float maxWidth = 0;
+			_root.CalculateDimensions(0, ref depth, 0, IndentWidth, ref maxWidth);
+			_contentSize.y = _root.height;// * _elementHeight;
+			_contentSize.x = maxWidth;// (depth + 1) * indentWidth + elementWidth;
 			RectTransform rt = contentPanel.GetComponent<RectTransform>();
 			rt.sizeDelta = _contentSize;
 		}
@@ -324,10 +350,10 @@ namespace RuntimeHierarchy {
 			expandPool.FreeAllElementFromPools();
 		}
 
-		private void CreateAllChildren(ElementState es) {
+		private void CreateAllChildren(UiElementNode<Transform> es) {
 			if (!es.Expanded) { return; }
 			for (int i = 0; i < es.children.Count; i++) {
-				ElementState child = es.children[i];
+				UiElementNode<Transform> child = es.children[i];
 				if (child.target != null && child.target.GetComponent<HierarchyIgnore>() != null) {
 					continue;
 				}
@@ -337,13 +363,15 @@ namespace RuntimeHierarchy {
 			}
 		}
 
-		private void CreateElement(ElementState es, bool cullOffScreen) {
+		private void CreateElement(UiElementNode<Transform> es, bool cullOffScreen) {
 			bool isARealElement = es.target != null;
-			Vector2 cursor = new Vector2(indentWidth * es.column, _elementHeight * es.row);
+			Vector2 cursor = new Vector2(_indentWidth * es.column, es.row);
 			Vector2 anchoredPosition = new Vector2(cursor.x, -cursor.y);
-			Vector2 elementPosition = anchoredPosition + (isARealElement ? Vector2.right * indentWidth : Vector2.zero);
-			Rect expandRect = new Rect(cursor, new Vector2(indentWidth, _elementHeight));
-			Rect elementRect = new Rect(cursor + Vector2.right * indentWidth, new Vector2(elementWidth, _elementHeight));
+			Vector2 elementPosition = anchoredPosition + (isARealElement ? Vector2.right * _indentWidth : Vector2.zero);
+			Rect expandRect = new Rect(cursor, new Vector2(_indentWidth, _indentWidth));
+			Vector2 elementSize = new Vector2(es.GetTargetWidth(), es.GetTargetHeight());
+			//Debug.Log($"{es.name}: {cursor}  {elementSize}");
+			Rect elementRect = new Rect(cursor + Vector2.right * _indentWidth, elementSize);
 			bool createdExpandButton = false;
 			if (isARealElement && (!cullOffScreen || _cullBox.Overlaps(expandRect))) {
 				createdExpandButton = CreateExpandButton(es, anchoredPosition);
@@ -358,7 +386,7 @@ namespace RuntimeHierarchy {
 			}
 		}
 
-		private bool CreateExpandButton(ElementState es, Vector2 anchoredPosition) {
+		private bool CreateExpandButton(UiElementNode<Transform> es, Vector2 anchoredPosition) {
 			if (es.children.Count == 0) {
 				return false;
 			}
@@ -372,12 +400,12 @@ namespace RuntimeHierarchy {
 			return true;
 		}
 
-		private void AddToggleExpand(ElementState es, Button expand) {
+		private void AddToggleExpand(UiElementNode<Transform> es, Button expand) {
 			expand.onClick.RemoveAllListeners();
 			expand.onClick.AddListener(() => ToggleExpand(es));
 		}
 
-		private void CreateElementButton(ElementState es, Vector2 elementPosition) {
+		private void CreateElementButton(UiElementNode<Transform> es, Vector2 elementPosition) {
 			Button element = elementPool.GetFreeFromPools(prefabElement, es.Label);
 			RectTransform rt = element.GetComponent<RectTransform>();
 			rt.SetParent(_contentPanelTransform, false);
@@ -394,18 +422,18 @@ namespace RuntimeHierarchy {
 			img.enabled = (es.target != null);
 		}
 
-		private void AddSelectElement(ElementState es, Button element) {
+		private void AddSelectElement(UiElementNode<Transform> es, Button element) {
 			element.onClick.RemoveAllListeners();
 			element.onClick.AddListener(() => SelectElement(es));
 		}
 
-		private void ToggleExpand(ElementState es) {
+		private void ToggleExpand(UiElementNode<Transform> es) {
 			//Debug.Log($"toggle {es.name}");
 			es.Expanded = !es.Expanded;
 			RefreshUiElements();
 		}
 
-		private void SelectElement(ElementState es) {
+		private void SelectElement(UiElementNode<Transform> es) {
 			Debug.Log($"selected {es.name} ({es.target})");
 			onElementSelect.Invoke(es.target);
 		}
