@@ -350,6 +350,14 @@ namespace RuntimeHierarchy {
 		}
 
 		private void FreeCurrentUiElements() {
+			for (int i = 0; i < elementPool.used.Count; i++) {
+				Button btn = elementPool.used[i];
+				if (btn == null) {
+					continue;
+				}
+				Image img = btn.GetComponent<Image>();
+				img.color = Color.green;
+			}
 			elementPool.FreeAllElementFromPools();
 			expandPool.FreeAllElementFromPools();
 		}
@@ -418,7 +426,8 @@ namespace RuntimeHierarchy {
 			}
 			es.Label = element;
 			Image img = element.GetComponent<Image>();
-			img.enabled = (es.target != null);
+			//img.enabled = (es.target != null);
+			//img.color = Color.white;
 			return rt;
 		}
 
