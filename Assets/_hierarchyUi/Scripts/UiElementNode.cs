@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -6,6 +7,7 @@ using UnityEngine.UI;
 namespace RuntimeHierarchy {
 	public class TransformNode : UiElementNode<Transform> {
 		protected HierarchyUi hierarchy;
+		public RectTransform elementTransform;
 		public TransformNode(HierarchyUi hierarchy, UiElementNode<Transform> parent, Transform target,
 		float col, float row, bool expanded)
 			: base(parent, target, col, row, expanded) {
@@ -15,9 +17,21 @@ namespace RuntimeHierarchy {
 		public override bool IsTargetActive() => target.gameObject.activeInHierarchy;
 		public override string GetTargetName() => target.name;
 		public override int GetTargetChildCount() => target.childCount;
-		// TODO calculate the size of the element by passing it's name through some method in hierarhcy that calculates size
-		public override float GetTargetHeight() => hierarchy.ElementHeight;
-		public override float GetTargetWidth() => hierarchy.ElementWidth;
+
+		public override float GetTargetHeight() {
+			//if (Label != null) {
+			//	RectTransform rt = Label.GetComponent<RectTransform>();
+			//	return rt.sizeDelta.y;
+			//}
+			return hierarchy.ElementHeight;
+		}
+		public override float GetTargetWidth() {
+			//if (Label != null) {
+			//	RectTransform rt = Label.GetComponent<RectTransform>();
+			//	return rt.sizeDelta.x;
+			//}
+			return hierarchy.ElementWidth;
+		}
 		public override float GetIndentWidth() => hierarchy.IndentWidth;
 	}
 
@@ -30,11 +44,14 @@ namespace RuntimeHierarchy {
 		public TARGET target;
 		protected Button _label, _expand;
 		public List<UiElementNode<TARGET>> children = new List<UiElementNode<TARGET>>();
-		/// <summary>
-		/// Used to determine if the children of this target has changed
-		/// </summary>
-		[HideInInspector]
-		public int _expectedTargetChildren;
+
+		private int _expectedTargetChildren;
+		private float _expectedHeight;
+		private float _expectedWidth;
+		private Action<int> _onChildCountChanged;
+		private Action<float> _onHeightChange;
+		private Action<float> _onWidthChange;
+
 		/// <summary>
 		/// Used to determine if the target has been deleted/removed/cleaned-up
 		/// </summary>
@@ -70,6 +87,55 @@ namespace RuntimeHierarchy {
 			set {
 				SetExpand(value, GetIndentWidth());
 			}
+		}
+
+
+		public void ListenTargetChildCount(Action<int> countChanged) {
+			_onChildCountChanged += countChanged;
+			IsChildCountChanged();
+		}
+
+		public void ListenTargetHeight(Action<float> sizeChanged) {
+			_onHeightChange += sizeChanged;
+			IsHeightChanged();
+		}
+
+		public void ListenTargetWidth(Action<float> sizeChanged) {
+			_onWidthChange += sizeChanged;
+			IsWidthChanged();
+		}
+
+		public void UnlistenTargetChildCount(Action<int> countChanged) { _onChildCountChanged -= countChanged; }
+
+		public void UnlistenTargetHeight(Action<float> sizeChanged) { _onHeightChange -= sizeChanged; }
+
+		public void UnlistenTargetWidth(Action<float> sizeChanged) { _onWidthChange -= sizeChanged; }
+
+		public bool IsChildCountChanged() {
+			int count = 0;
+			if (_expectedTargetChildren != (count = GetTargetChildCount())) {
+				_onChildCountChanged?.Invoke(_expectedTargetChildren = count);
+				return true;
+			}
+			return false;
+		}
+
+		public bool IsHeightChanged() {
+			float size = 0;
+			if (_expectedHeight != (size = GetTargetHeight())) {
+				_onHeightChange?.Invoke(_expectedHeight = size);
+				return true;
+			}
+			return false;
+		}
+
+		public bool IsWidthChanged() {
+			float size = 0;
+			if (_expectedWidth != (size = GetTargetWidth())) {
+				_onWidthChange?.Invoke(_expectedWidth = size);
+				return true;
+			}
+			return false;
 		}
 
 		public void SetExpand(bool value, float indentWidth) {

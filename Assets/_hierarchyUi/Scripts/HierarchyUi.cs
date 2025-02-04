@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
@@ -82,6 +81,10 @@ namespace RuntimeHierarchy {
 		/// cached value of how many elements are in each scene. used to quickly determine if new objects were added/removed
 		/// </summary>
 		private int[] expectedElementsAtSceneRoot;
+		/// <summary>
+		/// can force recalculation/redraw
+		/// </summary>
+		private bool _dirty = true;
 
 		public float IndentWidth => _indentWidth;
 		public float ElementWidth => _elementWidth;
@@ -204,7 +207,6 @@ namespace RuntimeHierarchy {
 				value.row = row;
 				value.children.Clear();
 				value.RefreshName();
-				value._expectedTargetChildren = (target != null) ? target.childCount : 0;
 			}
 			value._markedAsUsed = true;
 			return value;
@@ -287,10 +289,11 @@ namespace RuntimeHierarchy {
 		}
 
 		private void DetectHierarchyChangeAndRecalculateIfNeeded() {
-			bool mustRefreshData = IsSceneCountChanged() || IsRootElementCountChanged()
+			bool mustRefreshData = _dirty || IsSceneCountChanged() || IsRootElementCountChanged()
 				|| IsElementMissingOrChildElementCountChanged();
 			if (mustRefreshData) {
 				RefreshHierarchyState(true);
+				_dirty = false;
 			}
 		}
 
@@ -320,7 +323,8 @@ namespace RuntimeHierarchy {
 					//Debug.Log($"missing {es.name}");
 					return true;
 				}
-				if (es.target.childCount != es._expectedTargetChildren) {
+				//if (es.target.childCount != es._expectedTargetChildren) {
+				if (es.IsChildCountChanged()) {
 					//Debug.Log($"child count {es.name}: {es.target.childCount} vs {es._expectedTargetChildren}");
 					return true;
 				}
@@ -400,12 +404,7 @@ namespace RuntimeHierarchy {
 			return true;
 		}
 
-		private void AddToggleExpand(UiElementNode<Transform> es, Button expand) {
-			expand.onClick.RemoveAllListeners();
-			expand.onClick.AddListener(() => ToggleExpand(es));
-		}
-
-		private void CreateElementButton(UiElementNode<Transform> es, Vector2 elementPosition) {
+		private RectTransform CreateElementButton(UiElementNode<Transform> es, Vector2 elementPosition) {
 			Button element = elementPool.GetFreeFromPools(prefabElement, es.Label);
 			RectTransform rt = element.GetComponent<RectTransform>();
 			rt.SetParent(_contentPanelTransform, false);
@@ -420,11 +419,17 @@ namespace RuntimeHierarchy {
 			es.Label = element;
 			Image img = element.GetComponent<Image>();
 			img.enabled = (es.target != null);
+			return rt;
 		}
 
 		private void AddSelectElement(UiElementNode<Transform> es, Button element) {
 			element.onClick.RemoveAllListeners();
 			element.onClick.AddListener(() => SelectElement(es));
+		}
+
+		private void AddToggleExpand(UiElementNode<Transform> es, Button expand) {
+			expand.onClick.RemoveAllListeners();
+			expand.onClick.AddListener(() => ToggleExpand(es));
 		}
 
 		private void ToggleExpand(UiElementNode<Transform> es) {
