@@ -87,8 +87,12 @@ namespace RuntimeHierarchy {
 		private bool _dirty = true;
 
 		public float IndentWidth => _indentWidth;
-		public float ElementWidth => _elementWidth;
-		public float ElementHeight => _elementHeight;
+		public float ElementWidthDefault => _elementWidth;
+		public float ElementHeightDefault => _elementHeight;
+
+		protected void Start() {
+			ClearUi();
+		}
 
 		protected void Update() {
 			if (_root == null) {
@@ -202,11 +206,7 @@ namespace RuntimeHierarchy {
 				value = new TransformNode(this, parent, target, column, row, expanded);
 				elementStates[target] = value;
 			} else {
-				value.parent = parent;
-				value.column = column;
-				value.row = row;
-				value.children.Clear();
-				value.RefreshName();
+				value.Assign(parent, target, column, row, expanded);
 			}
 			value._markedAsUsed = true;
 			return value;
@@ -343,8 +343,8 @@ namespace RuntimeHierarchy {
 			int depth = 0;
 			float maxWidth = 0;
 			_root.CalculateDimensions(0, ref depth, 0, IndentWidth, ref maxWidth);
-			_contentSize.y = _root.height;// * _elementHeight;
-			_contentSize.x = maxWidth;// (depth + 1) * indentWidth + elementWidth;
+			_contentSize.y = _root.height;
+			_contentSize.x = maxWidth;
 			RectTransform rt = contentPanel.GetComponent<RectTransform>();
 			rt.sizeDelta = _contentSize;
 		}
@@ -355,8 +355,6 @@ namespace RuntimeHierarchy {
 				if (btn == null) {
 					continue;
 				}
-				Image img = btn.GetComponent<Image>();
-				img.color = Color.green;
 			}
 			elementPool.FreeAllElementFromPools();
 			expandPool.FreeAllElementFromPools();
@@ -426,7 +424,7 @@ namespace RuntimeHierarchy {
 			}
 			es.Label = element;
 			Image img = element.GetComponent<Image>();
-			//img.enabled = (es.target != null);
+			img.enabled = (es.target != null || !es.Expanded);
 			//img.color = Color.white;
 			return rt;
 		}
@@ -442,7 +440,6 @@ namespace RuntimeHierarchy {
 		}
 
 		private void ToggleExpand(UiElementNode<Transform> es) {
-			//Debug.Log($"toggle {es.name}");
 			es.Expanded = !es.Expanded;
 			RefreshUiElements();
 		}

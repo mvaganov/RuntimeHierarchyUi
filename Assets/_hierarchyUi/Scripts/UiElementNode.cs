@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -23,14 +22,14 @@ namespace RuntimeHierarchy {
 			//	RectTransform rt = Label.GetComponent<RectTransform>();
 			//	return rt.sizeDelta.y;
 			//}
-			return hierarchy.ElementHeight;
+			return hierarchy.ElementHeightDefault;
 		}
 		public override float GetTargetWidth() {
 			//if (Label != null) {
 			//	RectTransform rt = Label.GetComponent<RectTransform>();
 			//	return rt.sizeDelta.x;
 			//}
-			return hierarchy.ElementWidth;
+			return hierarchy.ElementWidthDefault;
 		}
 		public override float GetIndentWidth() => hierarchy.IndentWidth;
 	}
@@ -48,9 +47,7 @@ namespace RuntimeHierarchy {
 		private int _expectedTargetChildren;
 		private float _expectedHeight;
 		private float _expectedWidth;
-		private Action<int> _onChildCountChanged;
-		private Action<float> _onHeightChange;
-		private Action<float> _onWidthChange;
+
 
 		/// <summary>
 		/// Used to determine if the target has been deleted/removed/cleaned-up
@@ -89,50 +86,11 @@ namespace RuntimeHierarchy {
 			}
 		}
 
-
-		public void ListenTargetChildCount(Action<int> countChanged) {
-			_onChildCountChanged += countChanged;
-			IsChildCountChanged();
-		}
-
-		public void ListenTargetHeight(Action<float> sizeChanged) {
-			_onHeightChange += sizeChanged;
-			IsHeightChanged();
-		}
-
-		public void ListenTargetWidth(Action<float> sizeChanged) {
-			_onWidthChange += sizeChanged;
-			IsWidthChanged();
-		}
-
-		public void UnlistenTargetChildCount(Action<int> countChanged) { _onChildCountChanged -= countChanged; }
-
-		public void UnlistenTargetHeight(Action<float> sizeChanged) { _onHeightChange -= sizeChanged; }
-
-		public void UnlistenTargetWidth(Action<float> sizeChanged) { _onWidthChange -= sizeChanged; }
-
 		public bool IsChildCountChanged() {
 			int count = 0;
 			if (_expectedTargetChildren != (count = GetTargetChildCount())) {
-				_onChildCountChanged?.Invoke(_expectedTargetChildren = count);
-				return true;
-			}
-			return false;
-		}
-
-		public bool IsHeightChanged() {
-			float size = 0;
-			if (_expectedHeight != (size = GetTargetHeight())) {
-				_onHeightChange?.Invoke(_expectedHeight = size);
-				return true;
-			}
-			return false;
-		}
-
-		public bool IsWidthChanged() {
-			float size = 0;
-			if (_expectedWidth != (size = GetTargetWidth())) {
-				_onWidthChange?.Invoke(_expectedWidth = size);
+				_expectedTargetChildren = count;
+				//_onChildCountChanged?.Invoke(_expectedTargetChildren);
 				return true;
 			}
 			return false;
@@ -166,6 +124,10 @@ namespace RuntimeHierarchy {
 		}
 
 		public UiElementNode(UiElementNode<TARGET> parent, TARGET target, float column, float row, bool expanded) {
+			Assign(parent, target, column, row, expanded);
+		}
+
+		public void Assign(UiElementNode<TARGET> parent, TARGET target, float column, float row, bool expanded) {
 			this.target = target;
 			this.parent = parent;
 			this.column = column;
@@ -173,6 +135,7 @@ namespace RuntimeHierarchy {
 			_expanded = expanded;
 			_expectedTargetChildren = (target != null) ? GetTargetChildCount() : 0;
 			RefreshName();
+			children.Clear();
 		}
 
 		public void RefreshName() {
@@ -237,5 +200,49 @@ namespace RuntimeHierarchy {
 			}
 			return height;
 		}
+
+		// TODO implement callbacks for dynamic element resizing
+
+		//private Action<int> _onChildCountChanged;
+		//private Action<float> _onHeightChange;
+		//private Action<float> _onWidthChange;
+		//public void ListenTargetChildCount(Action<int> countChanged) {
+		//_onChildCountChanged += countChanged;
+		//	IsChildCountChanged();
+		//}
+
+		//public void ListenTargetHeight(Action<float> sizeChanged) {
+		//	_onHeightChange += sizeChanged;
+		//	IsHeightChanged();
+		//}
+
+		//public void ListenTargetWidth(Action<float> sizeChanged) {
+		//	_onWidthChange += sizeChanged;
+		//	IsWidthChanged();
+		//}
+
+		//public void UnlistenTargetChildCount(Action<int> countChanged) { _onChildCountChanged -= countChanged; }
+
+		//public void UnlistenTargetHeight(Action<float> sizeChanged) { _onHeightChange -= sizeChanged; }
+
+		//public void UnlistenTargetWidth(Action<float> sizeChanged) { _onWidthChange -= sizeChanged; }
+
+		//public bool IsHeightChanged() {
+		//	float size = 0;
+		//	if (_expectedHeight != (size = GetTargetHeight())) {
+		//		_onHeightChange?.Invoke(_expectedHeight = size);
+		//		return true;
+		//	}
+		//	return false;
+		//}
+
+		//public bool IsWidthChanged() {
+		//	float size = 0;
+		//	if (_expectedWidth != (size = GetTargetWidth())) {
+		//		_onWidthChange?.Invoke(_expectedWidth = size);
+		//		return true;
+		//	}
+		//	return false;
+		//}
 	}
 }
