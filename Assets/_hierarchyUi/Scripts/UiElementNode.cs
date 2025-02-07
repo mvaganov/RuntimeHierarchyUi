@@ -5,9 +5,9 @@ using UnityEngine.UI;
 
 namespace RuntimeHierarchy {
 	public class TransformNode : UiElementNode<Transform> {
-		protected HierarchyUi hierarchy;
+		protected UiHierarchy<Transform> hierarchy;
 		public RectTransform elementTransform;
-		public TransformNode(HierarchyUi hierarchy, UiElementNode<Transform> parent, Transform target,
+		public TransformNode(UiHierarchy<Transform> hierarchy, UiElementNode<Transform> parent, Transform target,
 		float col, float row, bool expanded)
 			: base(parent, target, col, row, expanded) {
 			this.hierarchy = hierarchy;
@@ -108,13 +108,13 @@ namespace RuntimeHierarchy {
 			_expanded = value;
 		}
 
-		private void UpateExpandIcon() {
+		protected virtual void UpateExpandIcon() {
 			if (_expand == null) { return; }
 			TMP_Text txt = _expand.GetComponentInChildren<TMP_Text>();
 			txt.text = _expanded ? "v" : ">";
 		}
 
-		public void UpdateLabelText() {
+		public virtual void UpdateLabelText() {
 			if (_label == null) { return; }
 			TMP_Text text = _label.GetComponentInChildren<TMP_Text>();
 			text.text = name;

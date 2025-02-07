@@ -8,9 +8,8 @@ namespace RuntimeHierarchy {
 	/// <summary>
 	/// creates efficient UI for a hierarchy at runtime
 	/// </summary>
-	[ExecuteInEditMode]
-	public class HierarchyUi : MonoBehaviour {
-		[System.Serializable] public class UnityEvent_Transform : UnityEvent<Transform> { }
+	public abstract class UiHierarchy<TARGET> : MonoBehaviour where TARGET : class {
+		[System.Serializable] public class UnityEvent_ : UnityEvent<TARGET> { }
 		/// <summary>
 		/// Where the hierarchy UI will be generated dynamically
 		/// </summary>
@@ -34,7 +33,7 @@ namespace RuntimeHierarchy {
 		/// <summary>
 		/// callback when a hierarchy element is selected
 		/// </summary>
-		public UnityEvent_Transform onElementSelect;
+		public UnityEvent_ onElementSelect;
 		/// <summary>
 		/// optimization for element button UI
 		/// </summary>
@@ -52,7 +51,7 @@ namespace RuntimeHierarchy {
 		/// <summary>
 		/// element state tree
 		/// </summary>
-		private TransformNode _root;
+		private UiElementNode<TARGET> _root;
 		/// <summary>
 		/// calculated area where hierarchy elements and expand/collapse UI should be generated
 		/// </summary>
@@ -74,13 +73,14 @@ namespace RuntimeHierarchy {
 		/// </summary>
 		private float _indentWidth;
 		/// <summary>
-		/// cached <see cref="TransformNode"/>s by hierarchy <see cref="Transform"/>. used to reuse allocations
+		/// cached nodes, by hierarchy <see cref="TARGET"/>. used to reuse state/allocations
 		/// </summary>
-		private Dictionary<Transform, TransformNode> elementStates = new Dictionary<Transform, TransformNode>();
+		private Dictionary<TARGET, UiElementNode<TARGET>> elementStates = new Dictionary<TARGET, UiElementNode<TARGET>>();
 		/// <summary>
 		/// cached value of how many elements are in each scene. used to quickly determine if new objects were added/removed
+		/// TODO move this to TransformHierarchyUi.
 		/// </summary>
-		private int[] expectedElementsAtSceneRoot;
+		protected int[] expectedElementsAtSceneRoot;
 		/// <summary>
 		/// can force recalculation/redraw
 		/// </summary>
@@ -90,13 +90,21 @@ namespace RuntimeHierarchy {
 		public float ElementWidthDefault => _elementWidth;
 		public float ElementHeightDefault => _elementHeight;
 
+		protected abstract UiElementNode<TARGET> CreateNode(UiElementNode<TARGET> parent, TARGET target, float col, float row, bool expanded);
+		protected abstract UiElementNode<TARGET> GenerateGraph(bool expanded);
+
 		protected void Start() {
 			ClearUi();
 		}
 
 		protected void Update() {
+#if UNITY_EDITOR
+			if (UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() != null) {
+				return;
+			}
+#endif
 			if (_root == null) {
-				RefreshHierarchyState(true);
+				RefreshHierarchyData(true);
 			}
 			CalcCullBox();
 			if (_usedCullBox != _cullBox) {
@@ -111,10 +119,9 @@ namespace RuntimeHierarchy {
 			_usedCullBox = new Rect(Vector2.zero, -Vector2.one);
 		}
 
-		[ContextMenu(nameof(ClearUi))]
-		public void ClearUi() {
+		public virtual void ClearUi() {
 			Transform uiElement = contentPanel.transform;
-			for (int i = uiElement.childCount-1; i >= 0; --i) {
+			for (int i = uiElement.childCount - 1; i >= 0; --i) {
 #if UNITY_EDITOR
 				if (!Application.isPlaying) {
 					DestroyImmediate(uiElement.GetChild(i).gameObject);
@@ -134,9 +141,8 @@ namespace RuntimeHierarchy {
 		/// <summary>
 		/// totally rebuilds the hierarchy UI, including refreshing data state
 		/// </summary>
-		[ContextMenu(nameof(RebuildHierarchy))]
-		public void RebuildHierarchy() {
-			RefreshHierarchyState(true);
+		public virtual void RebuildHierarchy() {
+			RefreshHierarchyData(true);
 			CalcCullBox();
 			RefreshUiElements();
 		}
@@ -145,7 +151,6 @@ namespace RuntimeHierarchy {
 		/// determines which elements of the hierarchy should exist
 		/// </summary>
 		/// <returns></returns>
-		[ContextMenu(nameof(CalcCullBox))]
 		protected Rect CalcCullBox() {
 			if (_scrollView == null) {
 				_scrollView = GetComponentInChildren<ScrollRect>();
@@ -162,26 +167,10 @@ namespace RuntimeHierarchy {
 			return _cullBox;
 		}
 
-		private void RefreshHierarchyState(bool expanded) {
-			TransformNode oldRoot = _root;
-			List<Transform>[] objectsPerScene = GetAllRootElementsByScene(out string[] sceneNames);
-			expectedElementsAtSceneRoot = new int[objectsPerScene.Length];
-			_root = new TransformNode(this, null, null, 0, 0, expanded);
+		private void RefreshHierarchyData(bool expanded) {
+			UiElementNode<TARGET> oldRoot = _root;
 			MarkCurrentElementsAsUnusedUntilTheyAreFoundByGetElementStateEntry();
-			for (int sceneIndex = 0; sceneIndex < objectsPerScene.Length; ++sceneIndex) {
-				List<Transform> list = objectsPerScene[sceneIndex];
-				if (sceneIndex < SceneManager.sceneCount) {
-					expectedElementsAtSceneRoot[sceneIndex] = SceneManager.GetSceneAt(sceneIndex).rootCount;
-				}
-				TransformNode sceneStateNode = new TransformNode(this, _root, null, 0, 0, expanded);
-				sceneStateNode.name = sceneNames[sceneIndex];
-				_root.children.Add(sceneStateNode);
-				for (int i = 0; i < list.Count; ++i) {
-					TransformNode es = GetElementStateEntry(sceneStateNode, list[i], 0, i, expanded);
-					sceneStateNode.children.Add(es);
-					AddChildrenStates(es, expanded);
-				}
-			}
+			_root = GenerateGraph(expanded);
 			RemoveUnusedElementsNotFoundByGetElementStateEntry();
 		}
 
@@ -190,9 +179,8 @@ namespace RuntimeHierarchy {
 				item.Value._markedAsUsed = false;
 			}
 		}
-
 		private void RemoveUnusedElementsNotFoundByGetElementStateEntry() {
-			List<Transform> removedTransforms = new List<Transform>();
+			List<TARGET> removedTransforms = new List<TARGET>();
 			foreach (var item in elementStates) {
 				if (!item.Value._markedAsUsed) {
 					removedTransforms.Add(item.Key);
@@ -201,9 +189,9 @@ namespace RuntimeHierarchy {
 			removedTransforms.ForEach(t => elementStates.Remove(t));
 		}
 
-		private TransformNode GetElementStateEntry(TransformNode parent, Transform target, float column, float row, bool expanded) {
-			if (!elementStates.TryGetValue(target, out TransformNode value)) {
-				value = new TransformNode(this, parent, target, column, row, expanded);
+		protected UiElementNode<TARGET> GetElementStateEntry(UiElementNode<TARGET> parent, TARGET target, float column, float row, bool expanded) {
+			if (!elementStates.TryGetValue(target, out UiElementNode<TARGET> value)) {
+				value = CreateNode(parent, target, column, row, expanded);// new TransformNode(this, parent, target, column, row, expanded);
 				elementStates[target] = value;
 			} else {
 				value.Assign(parent, target, column, row, expanded);
@@ -212,75 +200,9 @@ namespace RuntimeHierarchy {
 			return value;
 		}
 
-		private void AddChildrenStates(TransformNode self, bool expanded) {
-			float c = self.column + 1;
-			float r = self.row + 1;
-			for (int i = 0; i < self.target.childCount; ++i) {
-				Transform t = self.target.GetChild(i);
-				if (t == null || t.GetComponent<HierarchyIgnore>() != null) {
-					continue;
-				}
-				TransformNode es = GetElementStateEntry(self, t, c, r, expanded);
-				self.children.Add(es);
-				AddChildrenStates(es, expanded);
-			}
-		}
-
-		private static List<Transform>[] GetAllRootElementsByScene(out string[] sceneNames) {
-			Transform[] allObjects = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-			// initialize list of scenes and list of objects per scene
-			Dictionary<string, int> sceneIndexByName = new Dictionary<string, int>();
-			Dictionary<string, List<Transform>> objectsPerScene = new Dictionary<string, List<Transform>>();
-			for (int i = 0; i < SceneManager.sceneCount; ++i) {
-				string sceneName = SceneManager.GetSceneAt(i).name;
-				sceneIndexByName[sceneName] = i;
-				objectsPerScene[sceneName] = new List<Transform>();
-			}
-			// find root objects for each scene
-			for (int i = 0; i < allObjects.Length; ++i) {
-				Transform t = allObjects[i];
-				if (t != null && t.parent == null && t.GetComponent<HierarchyIgnore>() == null) {
-					string sceneName = t.gameObject.scene.name;
-					if (sceneName == null) {
-						Debug.Log($"should not have found a pure prefab: {t.name}");
-						continue;
-					}
-					if (!sceneIndexByName.TryGetValue(sceneName, out int sceneIndex)) {
-						sceneIndexByName[sceneName] = sceneIndex = sceneIndexByName.Count;
-					}
-					if (!objectsPerScene.TryGetValue(sceneName, out List<Transform> list)) {
-						list = new List<Transform>();
-						objectsPerScene[sceneName] = list;
-					}
-					list.Add(t);
-				}
-			}
-			// collapse scene dictionary into an array
-			List<Transform>[] resultListOfObjectsByScene = new List<Transform>[objectsPerScene.Count];
-			sceneNames = new string[objectsPerScene.Count];
-			foreach (var kvp in sceneIndexByName) {
-				sceneNames[kvp.Value] = kvp.Key;
-			}
-			// collapse dictionary of lists of objects into array of lists of objects.
-			foreach (var kvp in objectsPerScene) {
-				List<Transform> list = kvp.Value;
-				list.Sort((a, b) => a.GetSiblingIndex().CompareTo(b.GetSiblingIndex()));
-				if (sceneIndexByName.TryGetValue(kvp.Key, out int index)) {
-					resultListOfObjectsByScene[index] = list;
-				} else {
-					Debug.Log($"fail: {kvp.Key} missing from scene list");
-				}
-			}
-			return resultListOfObjectsByScene;
-		}
-
-		/// <summary>
-		/// refreshes UI elements without refreshing the underlying hierarchy data
-		/// </summary>
-		[ContextMenu(nameof(RefreshUiElements))]
-		private void RefreshUiElements() {
+		protected virtual void RefreshUiElements() {
 			if (contentPanel == null || prefabElement == null || prefabExpand == null) { return; }
-			DetectHierarchyChangeAndRecalculateIfNeeded();
+			DetectHierarchyDataChangeAndRecalculateIfNeeded();
 			CalculateHierarchySize();
 			FreeCurrentUiElements();
 			_contentPanelTransform = contentPanel.transform; // cache content transform
@@ -288,11 +210,11 @@ namespace RuntimeHierarchy {
 			_usedCullBox = _cullBox;
 		}
 
-		private void DetectHierarchyChangeAndRecalculateIfNeeded() {
+		private void DetectHierarchyDataChangeAndRecalculateIfNeeded() {
 			bool mustRefreshData = _dirty || IsSceneCountChanged() || IsRootElementCountChanged()
 				|| IsElementMissingOrChildElementCountChanged();
 			if (mustRefreshData) {
-				RefreshHierarchyState(true);
+				RefreshHierarchyData(true);
 				_dirty = false;
 			}
 		}
@@ -318,7 +240,7 @@ namespace RuntimeHierarchy {
 
 		private bool IsElementMissingOrChildElementCountChanged() {
 			foreach (var item in elementStates) {
-				TransformNode es = item.Value;
+				UiElementNode<TARGET> es = item.Value;
 				if (item.Key == null) {
 					//Debug.Log($"missing {es.name}");
 					return true;
@@ -332,7 +254,6 @@ namespace RuntimeHierarchy {
 			return false;
 		}
 
-		[ContextMenu(nameof(CalculateHierarchySize))]
 		private void CalculateHierarchySize() {
 			if (prefabElement == null || prefabExpand == null) {
 				return;
@@ -360,20 +281,22 @@ namespace RuntimeHierarchy {
 			expandPool.FreeAllElementFromPools();
 		}
 
-		private void CreateAllChildren(UiElementNode<Transform> es) {
+		private void CreateAllChildren(UiElementNode<TARGET> es) {
 			if (!es.Expanded) { return; }
 			for (int i = 0; i < es.children.Count; i++) {
-				UiElementNode<Transform> child = es.children[i];
-				if (child.target != null && child.target.GetComponent<HierarchyIgnore>() != null) {
+				UiElementNode<TARGET> child = es.children[i];
+				//Debug.Log($"{i} creating {child.name}");
+				if (!CreateElement(child, true)) {
 					continue;
 				}
-				//Debug.Log($"{i} creating {child.name}");
-				CreateElement(child, true);
 				CreateAllChildren(child);
 			}
 		}
 
-		private void CreateElement(UiElementNode<Transform> es, bool cullOffScreen) {
+		private bool CreateElement(UiElementNode<TARGET> es, bool cullOffScreen) {
+			if (es.target is Transform t && t.GetComponent<HierarchyIgnore>() != null) {
+				return false;
+			}
 			bool isARealElement = es.target != null;
 			Vector2 cursor = new Vector2(_indentWidth * es.column, es.row);
 			Vector2 anchoredPosition = new Vector2(cursor.x, -cursor.y);
@@ -394,9 +317,10 @@ namespace RuntimeHierarchy {
 			} else {
 				es.Label = null;
 			}
+			return true;
 		}
 
-		private bool CreateExpandButton(UiElementNode<Transform> es, Vector2 anchoredPosition) {
+		private bool CreateExpandButton(UiElementNode<TARGET> es, Vector2 anchoredPosition) {
 			if (es.children.Count == 0) {
 				return false;
 			}
@@ -410,7 +334,7 @@ namespace RuntimeHierarchy {
 			return true;
 		}
 
-		private RectTransform CreateElementButton(UiElementNode<Transform> es, Vector2 elementPosition) {
+		private RectTransform CreateElementButton(UiElementNode<TARGET> es, Vector2 elementPosition) {
 			Button element = elementPool.GetFreeFromPools(prefabElement, es.Label);
 			RectTransform rt = element.GetComponent<RectTransform>();
 			rt.SetParent(_contentPanelTransform, false);
@@ -425,26 +349,25 @@ namespace RuntimeHierarchy {
 			es.Label = element;
 			Image img = element.GetComponent<Image>();
 			img.enabled = (es.target != null || !es.Expanded);
-			//img.color = Color.white;
 			return rt;
 		}
 
-		private void AddSelectElement(UiElementNode<Transform> es, Button element) {
+		private void AddSelectElement(UiElementNode<TARGET> es, Button element) {
 			element.onClick.RemoveAllListeners();
 			element.onClick.AddListener(() => SelectElement(es));
 		}
 
-		private void AddToggleExpand(UiElementNode<Transform> es, Button expand) {
+		private void AddToggleExpand(UiElementNode<TARGET> es, Button expand) {
 			expand.onClick.RemoveAllListeners();
 			expand.onClick.AddListener(() => ToggleExpand(es));
 		}
 
-		private void ToggleExpand(UiElementNode<Transform> es) {
+		private void ToggleExpand(UiElementNode<TARGET> es) {
 			es.Expanded = !es.Expanded;
 			RefreshUiElements();
 		}
 
-		private void SelectElement(UiElementNode<Transform> es) {
+		private void SelectElement(UiElementNode<TARGET> es) {
 			Debug.Log($"selected {es.name} ({es.target})");
 			onElementSelect.Invoke(es.target);
 		}
